@@ -1,4 +1,4 @@
-from std.algorithm import parallelize
+from std.runtime.asyncrt import TaskGroup
 from std.sys.info import simd_width_of as simdwidthof
 
 
@@ -275,6 +275,48 @@ def prefilter_range(
         result[i] = 1 if ok else 0
 
 
+async def prefilter_chunk(
+    blob: BPtr,
+    ns: IPtr,
+    ne: IPtr,
+    ids: IPtr,
+    ide: IPtr,
+    cs: IPtr,
+    ce: IPtr,
+    query: BPtr,
+    tag_start: Int,
+    tag_end: Int,
+    id_start: Int,
+    id_end: Int,
+    offsets: IPtr,
+    class_count: Int,
+    result: BPtr,
+    chunk: Int,
+    node_count: Int,
+):
+    var first = chunk * PREFILTER_CHUNK_SIZE
+    var last = min(first + PREFILTER_CHUNK_SIZE, node_count)
+    prefilter_range(
+        blob,
+        ns,
+        ne,
+        ids,
+        ide,
+        cs,
+        ce,
+        query,
+        tag_start,
+        tag_end,
+        id_start,
+        id_end,
+        offsets,
+        class_count,
+        result,
+        first,
+        last,
+    )
+
+
 @export("mbs_prefilter")
 def mbs_prefilter(
     blob_addr: Int,
@@ -306,34 +348,33 @@ def mbs_prefilter(
     var offsets = IPtr(unsafe_from_address=class_offsets_addr)
     var result = BPtr(unsafe_from_address=result_addr)
 
-    @parameter
-    def work(chunk: Int):
-        var first = chunk * PREFILTER_CHUNK_SIZE
-        var last = min(first + PREFILTER_CHUNK_SIZE, node_count)
-        prefilter_range(
-            blob,
-            ns,
-            ne,
-            ids,
-            ide,
-            cs,
-            ce,
-            query,
-            tag_start,
-            tag_end,
-            id_start,
-            id_end,
-            offsets,
-            class_count,
-            result,
-            first,
-            last,
-        )
-
     if parallel_ready != 0 and node_count >= PREFILTER_PARALLEL_THRESHOLD:
-        parallelize[work](
+        var tasks = TaskGroup()
+        for chunk in range(
             (node_count + PREFILTER_CHUNK_SIZE - 1) // PREFILTER_CHUNK_SIZE
-        )
+        ):
+            tasks.create_task(
+                prefilter_chunk(
+                    blob,
+                    ns,
+                    ne,
+                    ids,
+                    ide,
+                    cs,
+                    ce,
+                    query,
+                    tag_start,
+                    tag_end,
+                    id_start,
+                    id_end,
+                    offsets,
+                    class_count,
+                    result,
+                    chunk,
+                    node_count,
+                )
+            )
+        tasks.wait()
     else:
         prefilter_range(
             blob,
