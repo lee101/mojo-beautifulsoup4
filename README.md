@@ -71,7 +71,7 @@ Selectors cover:
 - `:scope`, `:empty`, `:not`, `:is`, `:where`, `:has`, and
   `:-soup-contains`.
 
-The 58 tests compare behavior directly with Beautiful Soup 4.15.0 using its
+The 59 tests compare behavior directly with Beautiful Soup 4.15.0 using its
 `html.parser` builder. They assert tree output and query results, not merely successful
 execution. They also exercise the SIMD remainder, parallel threshold boundary, cache
 invalidation, and rejected FFI array layouts and bounds.
@@ -99,17 +99,20 @@ time.
 
 | operation | mojo-beautifulsoup4 | beautifulsoup4 | speedup |
 | --- | ---: | ---: | ---: |
-| parse document / 40k tags | 725.93 ms | 1554.99 ms | 2.14x |
-| select .card.active | 8.35 ms | 177.05 ms | 21.21x |
-| select article[data-kind=news] | 22.92 ms | 160.69 ms | 7.01x |
-| select main > article#p9999 | 0.59 ms | 99.28 ms | 168.98x |
-| find_all article.active | 0.89 ms | 89.80 ms | 100.70x |
+| parse document / 40k tags | 370.98 ms | 1471.86 ms | 3.97x |
+| select .card.active | 3.45 ms | 185.57 ms | 53.86x |
+| select article[data-kind=news] | 22.21 ms | 151.84 ms | 6.84x |
+| select main > article#p9999 | 0.58 ms | 105.32 ms | 180.60x |
+| find_all article.active | 0.89 ms | 54.70 ms | 61.55x |
 
 Simple root-level `find_all` calls for a literal tag and optional single class now reuse
 the compiled candidate prefilter. Other `find_all` criteria retain the general Python
 tree traversal path.
 
-No GPU path is provided.
+No GPU path is provided. Tokenization is a branch-heavy byte scan with well under two
+operations per byte, and profiling shows it is only a small fraction of parse time.
+The remaining tree assembly is dependency-ordered Python object construction, so
+device transfer and launch overhead cannot be recovered by useful parallel GPU work.
 
 ## How it works
 
@@ -117,6 +120,9 @@ Python encodes markup as UTF-8 and owns all allocations. One C-ABI call passes t
 address and four contiguous `int64` output arrays into Mojo. The tokenizer scans
 quotes, declarations, comments, and raw-text closing tags, returning token kinds and
 source offsets. Python then builds familiar linked `Tag` and `NavigableString` objects.
+Initial construction links nodes directly without mutation-time cache invalidation;
+public mutations retain normal invalidation behavior. Token offsets are converted from
+NumPy scalars in bulk, and slices are decoded only for token kinds that consume them.
 
 For selectors, the tree lazily caches tag names, IDs, and space-delimited classes in one
 contiguous byte blob plus six `int64` offset arrays. Mojo compares the rightmost

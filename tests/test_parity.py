@@ -57,6 +57,12 @@ def test_comments_doctype_and_processing_instruction():
     assert isinstance(reference.find(string="note"), ReferenceComment)
 
 
+def test_parse_construction_sets_parent_links():
+    soup = BeautifulSoup("<!doctype html><?go?><main>text<!--note--></main>")
+    assert all(node.parent is soup for node in soup.contents)
+    assert all(node.parent is soup.main for node in soup.main.contents)
+
+
 def test_raw_text_elements_match():
     markup = (
         '<script>if (a < b) x="</scriptx>"; &amp;</script>'

@@ -209,7 +209,9 @@ class AttributeDict(dict):
     def __init__(self, values=(), owner=None):
         self.owner = owner
         super().__init__()
-        self.update(values)
+        items = values.items() if hasattr(values, "items") else values
+        for key, value in items:
+            dict.__setitem__(self, key, self._wrap(value))
 
     def _wrap(self, value):
         if isinstance(value, list) and not isinstance(value, AttributeValueList):

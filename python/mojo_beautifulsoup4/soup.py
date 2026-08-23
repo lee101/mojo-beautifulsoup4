@@ -85,8 +85,12 @@ class BeautifulSoup(Tag):
         attrs = {}
         for match in _ATTR.finditer(raw, name_end):
             key = match.group(1).lower()
-            value = next((v for v in match.groups()[1:] if v is not None), None)
-            value = html.unescape(value) if value is not None else ""
+            double, single, unquoted = match.group(2, 3, 4)
+            value = double if double is not None else single
+            if value is None:
+                value = unquoted if unquoted is not None else ""
+            if "&" in value:
+                value = html.unescape(value)
             if key == "class":
                 value = value.split()
             attrs[key] = value
@@ -97,21 +101,24 @@ class BeautifulSoup(Tag):
         kinds, starts, ends, aux = _lib.tokenize(encoded)
         stack = [self]
         raw_names = {"script", "style"}
-        for kind, start, end, extra in zip(kinds, starts, ends, aux):
-            kind, start, end, extra = map(int, (kind, start, end, extra))
-            chunk = encoded[start:end].decode("utf-8")
+        tokens = zip(*(field.tolist() for field in (kinds, starts, ends, aux)))
+        for kind, start, end, extra in tokens:
             if kind == 0:
+                chunk = encoded[start:end].decode("utf-8")
                 if stack[-1].name not in raw_names:
-                    chunk = html.unescape(chunk)
+                    if "&" in chunk:
+                        chunk = html.unescape(chunk)
                 if chunk:
-                    stack[-1].append(NavigableString(chunk))
+                    node = NavigableString(chunk)
+                    node.parent = stack[-1]
+                    stack[-1].contents.append(node)
             elif kind == 1:
                 name = encoded[start:extra].decode("ascii", "ignore").lower()
                 if not name:
                     continue
                 raw = encoded[start:end].decode("utf-8")
-                tag = Tag(name, self._attrs(raw, extra - start))
-                stack[-1].append(tag)
+                tag = Tag(name, self._attrs(raw, extra - start), stack[-1])
+                stack[-1].contents.append(tag)
                 self_closing = raw.rstrip().endswith("/")
                 if name not in _VOID and not self_closing:
                     stack.append(tag)
@@ -122,16 +129,25 @@ class BeautifulSoup(Tag):
                         del stack[index:]
                         break
             elif kind == 3:
-                stack[-1].append(Comment(chunk))
+                chunk = encoded[start:end].decode("utf-8")
+                node = Comment(chunk)
+                node.parent = stack[-1]
+                stack[-1].contents.append(node)
             elif kind == 4:
+                chunk = encoded[start:end].decode("utf-8")
                 declaration = chunk.strip()
                 if declaration.lower().startswith("doctype"):
                     value = declaration[7:].strip()
-                    stack[-1].append(Doctype(value))
+                    node = Doctype(value)
                 else:
-                    stack[-1].append(Declaration(declaration))
+                    node = Declaration(declaration)
+                node.parent = stack[-1]
+                stack[-1].contents.append(node)
             elif kind == 5:
-                stack[-1].append(ProcessingInstruction(chunk.rstrip("?")))
+                chunk = encoded[start:end].decode("utf-8")
+                node = ProcessingInstruction(chunk.rstrip("?"))
+                node.parent = stack[-1]
+                stack[-1].contents.append(node)
 
     def _apply_strainer(self, strainer):
         kept = []
