@@ -1,4 +1,3 @@
-from std.runtime.asyncrt import TaskGroup
 from std.sys.info import simd_width_of as simdwidthof
 
 
@@ -275,7 +274,7 @@ def prefilter_range(
         result[i] = 1 if ok else 0
 
 
-async def prefilter_chunk(
+def prefilter_chunk(
     blob: BPtr,
     ns: IPtr,
     ne: IPtr,
@@ -349,32 +348,28 @@ def mbs_prefilter(
     var result = BPtr(unsafe_from_address=result_addr)
 
     if parallel_ready != 0 and node_count >= PREFILTER_PARALLEL_THRESHOLD:
-        var tasks = TaskGroup()
         for chunk in range(
             (node_count + PREFILTER_CHUNK_SIZE - 1) // PREFILTER_CHUNK_SIZE
         ):
-            tasks.create_task(
-                prefilter_chunk(
-                    blob,
-                    ns,
-                    ne,
-                    ids,
-                    ide,
-                    cs,
-                    ce,
-                    query,
-                    tag_start,
-                    tag_end,
-                    id_start,
-                    id_end,
-                    offsets,
-                    class_count,
-                    result,
-                    chunk,
-                    node_count,
-                )
+            prefilter_chunk(
+                blob,
+                ns,
+                ne,
+                ids,
+                ide,
+                cs,
+                ce,
+                query,
+                tag_start,
+                tag_end,
+                id_start,
+                id_end,
+                offsets,
+                class_count,
+                result,
+                chunk,
+                node_count,
             )
-        tasks.wait()
     else:
         prefilter_range(
             blob,
